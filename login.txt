@@ -1,0 +1,1127 @@
+حتماً. متن زیر را می‌توانی **تقریباً بدون تغییر به Agent دیگری بدهی**. سعی کرده‌ام هم هدف پروژه، هم معماری، هم جریان Login، هم جزئیات Linux، Selenium، systemd، امنیت Credential و تست را مشخص کنم؛ اما Agent نباید از اطلاعاتی که هنوز تأیید نشده‌اند حدس بزند.
+
+---
+
+# دستورالعمل کامل ساخت پروژه IUST Auto Login
+
+## 1. هدف پروژه
+
+یک نرم‌افزار واقعی برای **Linux/Ubuntu** با Python بساز که بتواند فرآیند اتصال به اینترنت دانشگاه صنعتی خواجه نصیر/شبکه دانشگاه را کاملاً خودکار کند.
+
+کاربر در حالت فعلی مجبور است هر بار:
+
+1. به Wi-Fi دانشگاه متصل شود.
+2. صفحه Login دانشگاه را باز کند.
+3. Username و Password را وارد کند.
+4. Login کند.
+5. وارد صفحه دیگری روی IP داخلی دانشگاه شود.
+6. با هشدار امنیتی مرورگر مواجه شود.
+7. روی **Send anyway** کلیک کند.
+8. در نهایت اینترنت فعال شود.
+
+هدف پروژه این است که کاربر **فقط یک بار Credential را تنظیم کند** و پس از آن نرم‌افزار تمام این فرآیند را به‌صورت خودکار انجام دهد.
+
+---
+
+# 2. تجربه نهایی کاربر
+
+کاربر بعد از نصب نرم‌افزار باید بتواند:
+
+```bash
+iust-login setup
+```
+
+را اجرا کند.
+
+برنامه:
+
+```text
+Username: ...
+Password: ...
+```
+
+را دریافت کند و Credential را به شکل امن ذخیره کند.
+
+سپس:
+
+```bash
+iust-login enable
+```
+
+را اجرا کند.
+
+از این لحظه برنامه به‌صورت خودکار با Linux/systemd اجرا شود.
+
+بعد از روشن شدن لپ‌تاپ:
+
+```text
+Ubuntu starts
+      ↓
+NetworkManager connects to Wi-Fi
+      ↓
+iust-login service starts
+      ↓
+Network detection
+      ↓
+Internet connectivity check
+      ↓
+If authentication required:
+      ↓
+Selenium authentication
+      ↓
+Verify Internet
+      ↓
+Monitoring
+```
+
+کاربر نباید نیاز داشته باشد Python script را دستی اجرا کند.
+
+---
+
+# 3. محیط هدف
+
+سیستم اصلی:
+
+```text
+Linux
+Ubuntu
+```
+
+ولی پروژه نباید به یک نسخه خاص Ubuntu وابسته باشد.
+
+تا حد امکان از:
+
+* Ubuntu 22.04
+* Ubuntu 24.04
+* Ubuntu 26.04
+* نسخه‌های بعدی
+
+پشتیبانی شود.
+
+از وابستگی‌های غیرضروری به نسخه خاص Linux جلوگیری شود.
+
+---
+
+# 4. تکنولوژی‌های اصلی
+
+Backend:
+
+```text
+Python 3
+```
+
+Browser automation:
+
+```text
+Selenium
+```
+
+Browser:
+
+```text
+Chromium/Chrome
+```
+
+Service manager:
+
+```text
+systemd
+```
+
+CLI:
+
+```text
+argparse
+```
+
+یا یک CLI library مناسب مثل:
+
+```text
+Typer
+```
+
+در صورت استفاده از dependency اضافه، دلیل آن در README توضیح داده شود.
+
+---
+
+# 5. جریان واقعی Login دانشگاه
+
+اطلاعاتی که تاکنون از سیستم دانشگاه مشخص شده:
+
+صفحه Login:
+
+```text
+https://login.iust.ac.ir/login.php
+```
+
+Request اصلی Login:
+
+```text
+POST https://login.iust.ac.ir/login.php
+```
+
+و وضعیت درخواست:
+
+```text
+200 OK
+```
+
+Remote address:
+
+```text
+194.225.230.120:443
+```
+
+فرم Login شامل حداقل:
+
+```html
+<input name="username" type="text">
+<input name="password" type="password">
+```
+
+پس Selenium باید این فرم را پیدا کرده و Username و Password را وارد کند.
+
+---
+
+# 6. مرحله دوم Login
+
+بعد از ارسال اطلاعات Login، کاربر وارد صفحه‌ای با آدرس:
+
+```text
+http://192.168.253.14/login
+```
+
+می‌شود.
+
+این صفحه روی HTTP است، نه HTTPS.
+
+مرورگر در این مرحله هشدار امنیتی نشان می‌دهد و کاربر فعلی باید روی:
+
+```text
+Send anyway
+```
+
+کلیک کند.
+
+برنامه باید این مرحله را نیز خودکار کند.
+
+**نکته مهم:**
+
+Agent نباید فرض کند ساختار HTML این صفحه دقیقاً چیست.
+
+باید ابتدا با Selenium صفحه را بررسی کند و:
+
+* title
+* URL
+* buttons
+* links
+* forms
+* DOM
+
+را بررسی کند.
+
+سپس selector مناسب برای `Send anyway` پیدا شود.
+
+Selector شکننده مثل XPath بسیار وابسته به متن/ساختار صفحه تا حد امکان استفاده نشود.
+
+---
+
+# 7. نکته بسیار مهم درباره هشدار HTTPS/HTTP
+
+هدف پروژه این نیست که certificate verification سیستم Linux را خاموش کند یا امنیت کل سیستم را کاهش دهد.
+
+فقط باید همان فرآیندی که کاربر در مرورگر انجام می‌دهد، به‌صورت کنترل‌شده توسط Selenium automation شود.
+
+اگر Chrome/Chromium برای صفحه داخلی دانشگاه هشدار نشان داد، Agent باید ابتدا دقیقاً مشخص کند این هشدار مربوط به:
+
+* Certificate
+* HTTP form warning
+* unsafe page
+* redirect
+* captive portal
+
+است.
+
+بعد راهکار مناسب انتخاب شود.
+
+نباید بدون بررسی، Chrome را با flagهای امنیتی خطرناک اجرا کرد.
+
+---
+
+# 8. تشخیص اینکه Login لازم است یا نه
+
+برنامه نباید هر بار بدون دلیل Selenium را اجرا کند.
+
+ابتدا باید وضعیت شبکه بررسی شود.
+
+منطق:
+
+```text
+Network connected?
+       |
+       | No
+       ↓
+   Wait
+
+       |
+       | Yes
+       ↓
+Internet accessible?
+       |
+       | Yes
+       ↓
+      Done
+
+       |
+       | No
+       ↓
+Captive Portal/Login required?
+       |
+       | Yes
+       ↓
+Selenium Login
+```
+
+برای Internet check یک endpoint پایدار انتخاب شود.
+
+ترجیحاً از چند روش fallback استفاده شود.
+
+مثلاً:
+
+```text
+DNS check
+HTTP connectivity
+HTTPS connectivity
+```
+
+اما درخواست‌ها نباید باعث رفتار اشتباه روی شبکه دانشگاه شوند.
+
+---
+
+# 9. تشخیص شبکه دانشگاه
+
+نرم‌افزار نباید به‌صورت کورکورانه روی هر Wi-Fi عملیات Login دانشگاه را اجرا کند.
+
+باید مشخص شود که دستگاه به شبکه دانشگاه متصل است.
+
+روش مناسب را Agent بعد از بررسی سیستم انتخاب کند.
+
+مثلاً:
+
+```bash
+nmcli
+```
+
+برای مشاهده connection فعال.
+
+یا بررسی:
+
+```text
+SSID
+Network interface
+Gateway
+DNS
+```
+
+ترجیحاً یک NetworkDetector abstraction ایجاد شود:
+
+```python
+class NetworkDetector:
+    def is_university_network(self) -> bool:
+        ...
+```
+
+این بخش باید قابل تست باشد.
+
+---
+
+# 10. Selenium Architecture
+
+Selenium باید در یک module مستقل باشد.
+
+مثلاً:
+
+```text
+src/iust_login/browser.py
+```
+
+و Authentication در:
+
+```text
+src/iust_login/authenticator.py
+```
+
+Browser manager مسئول:
+
+* startup
+* browser options
+* headless mode
+* timeout
+* cleanup
+* driver lifecycle
+
+باشد.
+
+Authenticator مسئول:
+
+```text
+open login page
+find username
+find password
+submit
+wait for redirect
+handle second page
+verify authentication
+```
+
+باشد.
+
+---
+
+# 11. Headless Mode
+
+نسخه Service باید بدون باز کردن پنجره مرورگر کار کند.
+
+بنابراین:
+
+```text
+Selenium
+    ↓
+Chromium
+    ↓
+Headless
+```
+
+استفاده شود.
+
+اما برای Debug یک mode غیر-headless داشته باشیم:
+
+```bash
+iust-login login --debug
+```
+
+تا کاربر بتواند مراحل Browser را ببیند.
+
+این قابلیت برای توسعه بسیار مهم است.
+
+---
+
+# 12. Credential Management
+
+هرگز این کار انجام نشود:
+
+```python
+USERNAME = "..."
+PASSWORD = "..."
+```
+
+و هرگز Password داخل:
+
+```text
+Git
+GitHub
+README
+source code
+systemd unit
+logs
+```
+
+قرار نگیرد.
+
+همچنین Password نباید در log چاپ شود.
+
+ترجیحاً از یکی از روش‌های امن Linux استفاده شود، مثلاً:
+
+```text
+Secret Service / keyring
+```
+
+یا مکانیزم امن مناسب سیستم.
+
+ساختار پیشنهادی:
+
+```python
+class CredentialStore:
+    def save(...)
+    def load(...)
+    def delete(...)
+```
+
+CLI:
+
+```bash
+iust-login setup
+```
+
+Credential را دریافت کند.
+
+Password هنگام ورود باید با:
+
+```python
+getpass
+```
+
+خوانده شود.
+
+---
+
+# 13. CLI
+
+CLI باید حرفه‌ای باشد.
+
+Commandهای پیشنهادی:
+
+```bash
+iust-login setup
+```
+
+تنظیم Credential.
+
+```bash
+iust-login login
+```
+
+اجرای Login دستی.
+
+```bash
+iust-login status
+```
+
+نمایش وضعیت.
+
+```bash
+iust-login enable
+```
+
+فعال‌سازی سرویس systemd.
+
+```bash
+iust-login disable
+```
+
+غیرفعال کردن سرویس.
+
+```bash
+iust-login logs
+```
+
+نمایش log.
+
+```bash
+iust-login uninstall
+```
+
+حذف نرم‌افزار و سرویس.
+
+همچنین:
+
+```bash
+iust-login login --debug
+```
+
+برای debugging.
+
+---
+
+# 14. Status
+
+مثلاً:
+
+```text
+IUST Auto Login
+────────────────────────────
+Network       : Connected
+University    : Detected
+Internet      : Connected
+Authentication: Active
+Service       : Running
+────────────────────────────
+```
+
+اگر Login لازم باشد:
+
+```text
+Network       : Connected
+University    : Detected
+Internet      : Not available
+Authentication: Required
+```
+
+---
+
+# 15. Monitor
+
+بعد از Login برنامه نباید terminate شود.
+
+باید اتصال را monitor کند.
+
+مثلاً:
+
+```text
+Monitor
+   ↓
+Internet OK?
+   ↓
+YES → sleep
+   ↓
+NO
+   ↓
+Wait/recheck
+   ↓
+Login required?
+   ↓
+YES
+   ↓
+Authenticate
+```
+
+Interval باید configurable باشد.
+
+مثلاً:
+
+```text
+30 seconds
+60 seconds
+```
+
+اما polling بیش از حد نباید انجام شود.
+
+---
+
+# 16. جلوگیری از Loginهای تکراری
+
+اگر Internet برقرار است:
+
+```text
+DO NOTHING
+```
+
+نباید Selenium را مرتب باز و بسته کنیم.
+
+همچنین اگر Authentication در حال انجام است:
+
+```text
+login_in_progress = True
+```
+
+نباید Thread/Process دیگری Login دیگری شروع کند.
+
+باید lock mechanism وجود داشته باشد.
+
+---
+
+# 17. systemd
+
+یک unit file ایجاد شود:
+
+```text
+systemd/iust-login.service
+```
+
+و سرویس به شکل صحیح اجرا شود.
+
+هدف:
+
+```text
+Boot
+ ↓
+systemd
+ ↓
+iust-login
+```
+
+اما سرویس باید وابسته به آماده شدن شبکه باشد.
+
+بنابراین dependencyهای مناسب systemd مثل:
+
+```text
+network-online.target
+```
+
+بررسی شوند.
+
+---
+
+# 18. Service نباید با Root اجرا شود مگر ضرورت واقعی وجود داشته باشد
+
+تا حد امکان:
+
+```text
+User Service
+```
+
+یا سرویس با user مشخص اجرا شود.
+
+اجرای Selenium به عنوان root توصیه نمی‌شود.
+
+Credentialها نیز باید تحت حساب کاربر قرار داشته باشند.
+
+---
+
+# 19. Logging
+
+Logging استاندارد Python استفاده شود:
+
+```python
+logging
+```
+
+سطوح:
+
+```text
+INFO
+WARNING
+ERROR
+DEBUG
+```
+
+نمونه:
+
+```text
+2026-10-06 20:00:01 INFO Network connected
+2026-10-06 20:00:02 INFO Checking internet
+2026-10-06 20:00:03 INFO Authentication required
+2026-10-06 20:00:04 INFO Starting browser
+2026-10-06 20:00:08 INFO Login successful
+```
+
+اما:
+
+```text
+PASSWORD
+SESSION TOKEN
+COOKIE
+```
+
+هرگز log نشود.
+
+---
+
+# 20. Error Handling
+
+برنامه باید در برابر خطاها مقاوم باشد.
+
+مثلاً:
+
+```text
+Wi-Fi disconnected
+Browser unavailable
+ChromeDriver unavailable
+Login page unavailable
+Login failed
+Timeout
+University server unavailable
+Internet unavailable
+```
+
+نباید برنامه crash کند و تمام شود.
+
+مثلاً:
+
+```text
+Login failed
+↓
+wait
+↓
+retry
+```
+
+با exponential backoff مناسب.
+
+---
+
+# 21. Browser Driver
+
+Agent باید بررسی کند Selenium Manager در نسخه Selenium مورد استفاده می‌تواند Driver را مدیریت کند یا خیر.
+
+هدف این است که کاربر مجبور نباشد دستی:
+
+```text
+chromedriver
+```
+
+را نصب و configure کند، مگر اینکه در نسخه/محیط خاصی ضروری باشد.
+
+در README روش fallback توضیح داده شود.
+
+---
+
+# 22. نصب
+
+کاربر نباید مجبور باشد source code را بشناسد.
+
+حداقل:
+
+```bash
+git clone <repo>
+cd iust-auto-login
+./install.sh
+```
+
+بعد:
+
+```bash
+iust-login setup
+iust-login enable
+```
+
+هدف بهتر:
+
+```bash
+sudo apt install ...
+```
+
+یا ساخت package مناسب Linux در نسخه‌های بعدی.
+
+---
+
+# 23. تست
+
+پروژه باید Test داشته باشد.
+
+مثلاً:
+
+```text
+tests/
+├── test_network.py
+├── test_credentials.py
+├── test_config.py
+└── test_authenticator.py
+```
+
+بخش‌هایی که به دانشگاه وابسته‌اند باید با Mock تست شوند.
+
+تست واقعی Login دانشگاه باید Integration Test اختیاری باشد.
+
+مثلاً:
+
+```bash
+pytest
+```
+
+نباید برای اجرای Test معمولی واقعاً Username/Password دانشگاه را بخواهد.
+
+---
+
+# 24. Configuration
+
+Config نباید hard-code شود.
+
+مثلاً:
+
+```text
+login_url
+university_host
+check_interval
+timeout
+browser
+headless
+retry_count
+```
+
+قابل تنظیم باشند.
+
+ولی:
+
+```text
+username
+password
+```
+
+نباید در config معمولی ذخیره شوند.
+
+---
+
+# 25. Security
+
+موارد امنیتی مهم:
+
+* Password plaintext در repository ممنوع.
+* Password در log ممنوع.
+* Credential در Git ممنوع.
+* `.gitignore` مناسب.
+* Permission فایل‌های credential محدود.
+* Selenium با user عادی.
+* عدم استفاده غیرضروری از `--no-sandbox`.
+* عدم خاموش کردن کلی certificate/security checks بدون دلیل.
+* عدم ذخیره Cookie/Session به شکل ناامن.
+* عدم ارسال Credential به هیچ سرویس خارجی.
+
+---
+
+# 26. README
+
+README باید برای GitHub حرفه‌ای باشد.
+
+شامل:
+
+```text
+# IUST Auto Login
+
+Features
+
+Architecture
+
+Requirements
+
+Installation
+
+Setup
+
+Usage
+
+CLI Commands
+
+Systemd
+
+Security
+
+Troubleshooting
+
+Development
+
+Testing
+
+Contributing
+
+License
+```
+
+یک diagram از Architecture هم در README قرار گیرد.
+
+---
+
+# 27. Git Workflow
+
+Repository تمیز باشد.
+
+مثلاً commitها:
+
+```text
+initial project structure
+add selenium authentication
+add network detection
+add credential storage
+add cli
+add monitoring
+add systemd service
+add tests
+add documentation
+```
+
+و هیچ Credential واقعی در repository قرار نگیرد.
+
+---
+
+# 28. مراحل اجرای پروژه
+
+Agent نباید همه چیز را یک‌باره بنویسد.
+
+به ترتیب:
+
+### Phase 1
+
+راه‌اندازی پروژه:
+
+```text
+Python
+venv
+pyproject
+Git
+```
+
+### Phase 2
+
+Selenium Prototype:
+
+```text
+Open login page
+Find username
+Find password
+Submit
+```
+
+### Phase 3
+
+پیاده‌سازی صفحه دوم:
+
+```text
+192.168.253.14/login
+```
+
+و بررسی دقیق رفتار `Send anyway`.
+
+### Phase 4
+
+Authentication Service:
+
+```text
+Authenticator
+```
+
+### Phase 5
+
+Network Detection.
+
+### Phase 6
+
+Credential Manager.
+
+### Phase 7
+
+CLI.
+
+### Phase 8
+
+Monitoring.
+
+### Phase 9
+
+systemd.
+
+### Phase 10
+
+Testing.
+
+### Phase 11
+
+Packaging.
+
+### Phase 12
+
+README و GitHub.
+
+---
+
+# 29. نکته بسیار مهم برای Agent
+
+**نباید هیچ قسمت ناشناخته‌ای را حدس بزند.**
+
+به‌خصوص درباره:
+
+```text
+HTML صفحه دوم
+Send anyway
+Redirect
+Cookies
+Session
+Login success condition
+Network behavior
+```
+
+اگر چیزی مشخص نیست، ابتدا با Selenium/Browser DevTools آن را بررسی کند.
+
+اطلاعاتی که فعلاً قطعی داریم:
+
+```text
+Login URL:
+https://login.iust.ac.ir/login.php
+
+Method:
+POST
+
+Status:
+200 OK
+
+Username field:
+name="username"
+
+Password field:
+name="password"
+
+Second URL:
+http://192.168.253.14/login
+
+Second-stage action:
+Send anyway
+```
+
+اما **Form Data کامل Login هنوز در اختیار Agent نیست** و باید هنگام توسعه بررسی شود.
+
+---
+
+# 30. معیار موفقیت نهایی
+
+پروژه زمانی کامل محسوب می‌شود که این سناریو بدون دخالت کاربر کار کند:
+
+```text
+Laptop ON
+    ↓
+Ubuntu
+    ↓
+Wi-Fi دانشگاه
+    ↓
+iust-login service
+    ↓
+Detect university network
+    ↓
+Internet check
+    ↓
+Internet unavailable
+    ↓
+Selenium starts
+    ↓
+login.iust.ac.ir/login.php
+    ↓
+Username + Password
+    ↓
+Submit
+    ↓
+192.168.253.14/login
+    ↓
+Handle "Send anyway"
+    ↓
+Internet verification
+    ↓
+Internet available
+    ↓
+Selenium closes
+    ↓
+Monitor continues
+```
+
+و اگر بعداً:
+
+```text
+Internet lost
+```
+
+شود:
+
+```text
+Detect failure
+     ↓
+Wait
+     ↓
+Re-authenticate
+     ↓
+Verify Internet
+     ↓
+Continue monitoring
+```
+
+کاربر نباید مجبور به اجرای دوباره Python باشد.
+
+---
+
+## خروجی نهایی مورد انتظار
+
+در پایان باید یک Repository واقعی داشته باشیم:
+
+```text
+iust-auto-login
+```
+
+که کاربر Ubuntu بتواند آن را نصب کند و فقط:
+
+```bash
+iust-login setup
+iust-login enable
+```
+
+را انجام دهد.
+
+بعد از آن نرم‌افزار **به‌صورت خودکار با روشن شدن سیستم و اتصال به شبکه دانشگاه کار کند**.
+
+**نکته:** برای پیاده‌سازی واقعی، Agent باید ابتدا رفتار دقیق دو صفحه و مخصوصاً مرحله `Send anyway` را روی سیستم کاربر مشاهده و تست کند؛ نباید selector یا جریان Redirect را از روی حدس بسازد.
+
