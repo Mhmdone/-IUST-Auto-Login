@@ -2,6 +2,8 @@
 
 Automatic authentication service for Iran University of Science and Technology (IUST) network on Linux/Ubuntu.
 
+خب هدف اصلی ایجاد این ریپو اینطور بود که از وارد کردن دستی اطلاعات و تایید نا امن بودن برای وصل شدن به اینترنت دانشگاه خسته شدم، بنابر این گفتم یه فرایند خودکار ایجاد کنم تا دیگه نخوام اینکار هارو انجام بدم.
+فقط یه نکته ای که داره اونم اینه که چون با selenium نوشته شده وصل شدن 3 الی 4 ثانیه ای طول میکشه که البته این برا زمانی که سیستم روشن کردید تا بخواهید کارتونو بکنید اوکی، اما اگر فرصت بشه سعی میکنم با request که خب فرایند سریع تر میکنه این پروژه رو انجام بدم. اگر دوست داشتید میتونید استار بدید :)
 ## Features
 
 - 🔐 **Automatic Login** — Seamless authentication to IUST university network on boot
